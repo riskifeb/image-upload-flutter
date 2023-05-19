@@ -1,59 +1,170 @@
-import 'dart:convert';
 import 'dart:io';
 
-import 'package:dio/dio.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
-import 'package:path/path.dart';
-import 'package:path_provider/path_provider.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 
-void main() => runApp(KifebApp());
+void main() => runApp(const MyApp());
 
-class KifebApp extends StatelessWidget {
+class MyApp extends StatelessWidget {
+  const MyApp({Key? key}) : super(key: key);
+
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      home: Scaffold(
-        body: Center(
-            child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            TextButton(
-                onPressed: () {
-                  downloadfile();
-                },
-                child: const Text('Upload'))
-          ],
-        )),
-      ),
+    return const MaterialApp(
+      title: 'Unggah Gambar',
+      home: UploadImageScreen(),
     );
   }
 }
 
-Future downloadfile() async {
-  var dio = Dio();
+class UploadImageScreen extends StatefulWidget {
+  const UploadImageScreen({Key? key}) : super(key: key);
+  @override
+  _UploadImageScreenState createState() => _UploadImageScreenState();
+}
 
-  FilePickerResult? result = await FilePicker.platform.pickFiles();
+class _UploadImageScreenState extends State<UploadImageScreen> {
+  File? _image;
 
-  if (result != null) {
-    File file = File(result.files.single.path ?? " ");
+  Future<void> _getImage(ImageSource source) async {
+    final pickedFile = await ImagePicker().pickImage(source: source);
 
-    String filename = file.path.split("/").last;
-
-    String filepath = file.path;
-
-    FormData data = FormData.fromMap({
-      'key': 'b385d60d49bcf708a6fb7f9837dd12f6',
-      'image': await MultipartFile.fromFile(filepath, filename: filename),
-      'name': 'house.jpg'
+    setState(() {
+      if (pickedFile != null) {
+        _image = File(pickedFile.path);
+      }
     });
+  }
 
-    var response = await dio.post("https://api.imgbb.com/1/upload",
-        data: data, onSendProgress: (count, total) => print('$count $total'));
-    print(response.data);
-  } else {
-    print('image is null');
+  Future<void> _uploadImage() async {
+    String apiUrl = 'http://192.168.20.89:5500/upload';
+    List<int> imageBytes = _image!.readAsBytesSync();
+    String base64Image = base64Encode(imageBytes);
+
+    // Menyiapkan data permintaan
+    Map<String, dynamic> requestBody = {
+      'image': base64Image,
+    };
+
+    // Mengirim permintaan POST ke API
+    try {
+      final response =
+          await http.post(Uri.parse(apiUrl), body: json.encode(requestBody));
+
+      if (response.statusCode == 200) {
+        // Berhasil mengunggah gambar
+        setState(() {
+          _image = null;
+        });
+        _showSuccessDialog();
+      } else {
+        // Gagal mengunggah gambar
+        _showErrorDialog(
+            'Failed to upload image. Error: ${response.statusCode}');
+      }
+    } catch (error) {
+      // Gagal melakukan permintaan
+      _showErrorDialog('Failed to upload image. Error: $error');
+    }
+  }
+
+  void _showSuccessDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Success'),
+          content: const Text('Image uploaded successfully.'),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Close'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showErrorDialog(String errorMessage) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Error'),
+          content: Text(errorMessage),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Close'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Upload Image'),
+      ),
+      body: Center(
+        child: _image == null
+            ? const Text('No image selected.')
+            : Image.file(_image!),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          showModalBottomSheet(
+            context: context,
+            builder: (context) => Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                ListTile(
+                  leading: const Icon(Icons.camera_alt),
+                  title: const Text('Take a photo'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _getImage(ImageSource.camera);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.image),
+                  title: const Text('Choose from gallery'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _getImage(ImageSource.gallery);
+                  },
+                ),
+              ],
+            ),
+          );
+        },
+        child: const Icon(Icons.add),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      bottomNavigationBar: BottomAppBar(
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16.0),
+              child: ElevatedButton(
+                onPressed: _uploadImage,
+                child: const Text('Upload'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
